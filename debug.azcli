@@ -1,0 +1,37 @@
+AzureSubscriptionId="<subscription-id>"
+AzureTenantId="<tenant-id>"
+AzureResourceGroup="demorg001"
+AzureLocation="westeurope"
+
+# Sign in to Azure using device code - After login session is scoped to Subscription in Tenant
+az login --use-device-code --tenant $AzureTenantId
+az account set --subscription $AzureSubscriptionId
+
+# Set default values for location and resource group
+az config set defaults.location=$AzureLocation defaults.group=$AzureResourceGroup
+
+# Create resource group and capture resource group identifier
+ResourceGroupId=$(az group create --name $AzureResourceGroup --query "id" --output tsv)
+
+# Generate Unique ID based on ResourceGroupId
+UniqueId=$(echo -n $ResourceGroupId | md5sum | cut -c-13)
+
+# Create ServiceBus and Queue
+ServiceBusNamespace="sbdemo0001$UniqueId"
+QueueName="demoqueue"
+echo "Going to create ServiceBus $ServiceBusNamespace and Queue $QueueName"
+AzureServiceBusId=$(az servicebus namespace create --name $ServiceBusNamespace --sku Basic --query id -o tsv)
+AzureServiceBusQueueId=$(az servicebus queue create --name $QueueName --namespace-name $ServiceBusNamespace --default-message-time-to-live P0Y0M0DT0H0M30S --query id -o tsv)
+
+# Fetch ServiceBus Connectionstring
+PrimaryConnectionString=$(az servicebus namespace authorization-rule keys list \
+    --namespace-name $ServiceBusNamespace \
+    --name "RootManageSharedAccessKey" \
+    --query "primaryConnectionString" \
+    --output tsv)
+
+echo "$PrimaryConnectionString"
+
+# Assign Role "Azure Service Bus Data Owner" for the current user
+UserIdentity=$(az ad signed-in-user show --query objectId -o tsv)
+az role assignment create --assignee $UserIdentity --role "Azure Service Bus Data Owner" --scope $AzureServiceBusId
